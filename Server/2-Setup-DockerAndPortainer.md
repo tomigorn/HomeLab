@@ -147,3 +147,26 @@ objective_banzai
 $ docker container ls --all
 CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES
 ```
+
+# How to install Portainer
+This is the setup, for an existing Portainer Server on a RaspberryPi. We want to only add a this Ubuntu Server as a new environment to that existing RaspberryPi.
+
+- On the Portainer WebUI, on the left side, press "Environment-related/Environments".
+- Press "Add environment" on the righthand side.
+- Select "Docker Standalone"
+- "Start Wizard"
+- *Copy Command* and run it on your Ubuntu Server:
+```bash
+docker run -d \
+  -p 9001:9001 \
+  --name portainer_agent \
+  --restart=always \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /var/lib/docker/volumes:/var/lib/docker/volumes \
+  -v /:/host \
+  portainer/agent:2.33.1
+```
+- Again in the Portainer WebUI, set a Name (here: "beefy") and Environment address (here: "192.168.1.102:9001")
+- Press "Connect"
+
+You should be able to see your new environment under Home in Portainer, and pressing on it should show Stacks, Images, Networks, Container and Volumes
