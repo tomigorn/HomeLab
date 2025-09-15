@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+pip-wheel-metadata/
+.venv/
+venv/
+env/
+ENV/
+
+# Test / coverage / type-checkers
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Docker / Compose
+docker-compose.override.yml
+docker-compose.*.yml
+.docker/
+
+# Secrets / keys / envs
+.env
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+*.secret
+*.enc
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+crash.log
+terraform.tfvars
+*.tfvars
+override.tf
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.iml
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs, swap, temp
+*.log
+*.swp
+*~
