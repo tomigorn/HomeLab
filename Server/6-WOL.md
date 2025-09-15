@@ -111,12 +111,44 @@ $ sudo apt install -y wakeonlan
 
 # confirm the server is sleeping
 $ ping -c 4 192.168.1.102
+PING 192.168.1.102 (192.168.1.102) 56(84) bytes of data.
+
+--- 192.168.1.102 ping statistics ---
+4 packets transmitted, 0 received, 100% packet loss, time 3060ms
+
+# confirm the server is sleeping
 $ ssh buntu@beefy
+ssh: connect to host beefy port 22: No route to host
 
 # taking the mac from before, send the wakeonlan command
-wakeonlan zz:zz:zz:zz:zz:zz
+$ wakeonlan zz:zz:zz:zz:zz:zz
+Sending magic packet to 255.255.255.255:9 with zz:zz:zz:zz:zz:zz
 
 # confirm the server woke
+# first ping, immediatly after wake on lan magic package will fail
 $ ping -c 4 192.168.1.102
+PING 192.168.1.102 (192.168.1.102) 56(84) bytes of data.
+From 192.168.1.100 icmp_seq=1 Destination Host Unreachable
+From 192.168.1.100 icmp_seq=2 Destination Host Unreachable
+From 192.168.1.100 icmp_seq=3 Destination Host Unreachable
+From 192.168.1.100 icmp_seq=4 Destination Host Unreachable
+
+--- 192.168.1.102 ping statistics ---
+4 packets transmitted, 0 received, +4 errors, 100% packet loss, time 3075ms
+pipe 3
+
+# after some time the server is again online
+$ ping -c 4 192.168.1.102
+PING 192.168.1.102 (192.168.1.102) 56(84) bytes of data.
+64 bytes from 192.168.1.102: icmp_seq=1 ttl=64 time=0.269 ms
+64 bytes from 192.168.1.102: icmp_seq=2 ttl=64 time=0.159 ms
+64 bytes from 192.168.1.102: icmp_seq=3 ttl=64 time=0.139 ms
+64 bytes from 192.168.1.102: icmp_seq=4 ttl=64 time=0.146 ms
+
+--- 192.168.1.102 ping statistics ---
+4 packets transmitted, 4 received, 0% packet loss, time 3050ms
+rtt min/avg/max/mdev = 0.139/0.178/0.269/0.052 ms
+
+# also ssh now works again
 $ ssh buntu@beefy
 ```
