@@ -44,6 +44,20 @@ if [ -z "$STATE" ]; then
   STATE="State unknown"
 fi
 
+# Map observed states to a simple binary: SPUN_DOWN or SPINNING (or UNKNOWN)
+# - STANDBY / SLEEP => SPUN_DOWN
+# - ACTIVE / IDLE / IDLE_A / active/idle => SPINNING
+# - otherwise => UNKNOWN
+UPPER=$(printf "%s" "$STATE" | tr '[:lower:]' '[:upper:]')
+if printf "%s" "$UPPER" | grep -Eq 'STANDBY|SLEEP'; then
+  NORM="SPUN_DOWN"
+elif printf "%s" "$UPPER" | grep -Eq 'ACTIVE|IDLE'; then
+  NORM="SPINNING"
+else
+  NORM="UNKNOWN"
+fi
+
 mkdir -p "$(dirname "$LOGFILE")"
-echo "$TIMESTAMP - $STATE" >> "$LOGFILE"
-echo "$TIMESTAMP - $STATE"
+# Log both the raw state and the normalized state for clarity
+echo "$TIMESTAMP - $STATE - $NORM" >> "$LOGFILE"
+echo "$TIMESTAMP - $STATE - $NORM"
