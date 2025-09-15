@@ -152,3 +152,84 @@ rtt min/avg/max/mdev = 0.139/0.178/0.269/0.052 ms
 # also ssh now works again
 $ ssh buntu@beefy
 ```
+
+### Troubleshooting high CPU usage after wake up, resulting in very high power usage
+
+in btop we can nicely see, that all cores are above 95% usage. this is insane.
+
+There is no easy way to copy paste btop output, so here is the output from mpstat:
+```bash
+$ mpstat -P ALL
+Linux 6.8.0-79-generic (beefy) 	09/16/2025 	_x86_64_	(12 CPU)
+
+01:10:27 AM  CPU    %usr   %nice    %sys %iowait    %irq   %soft  %steal  %guest  %gnice   %idle
+01:10:28 AM  all    2.16    0.00   97.26    0.00    0.00    0.00    0.00    0.00    0.00    0.58
+01:10:28 AM    0    3.00    0.00   96.00    0.00    0.00    0.00    0.00    0.00    0.00    1.00
+01:10:28 AM    1    1.98    0.00   97.03    0.00    0.00    0.00    0.00    0.00    0.00    0.99
+01:10:28 AM    2    2.00    0.00   97.00    0.00    0.00    0.00    0.00    0.00    0.00    1.00
+01:10:28 AM    3    2.00    0.00   98.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00
+01:10:28 AM    4    2.00    0.00   98.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00
+01:10:28 AM    5    2.00    0.00   97.00    0.00    0.00    0.00    0.00    0.00    0.00    1.00
+01:10:28 AM    6    2.00    0.00   98.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00
+01:10:28 AM    7    2.94    0.00   96.08    0.00    0.00    0.00    0.00    0.00    0.00    0.98
+01:10:28 AM    8    2.94    0.00   96.08    0.00    0.00    0.00    0.00    0.00    0.00    0.98
+01:10:28 AM    9    1.01    0.00   98.99    0.00    0.00    0.00    0.00    0.00    0.00    0.00
+01:10:28 AM   10    2.00    0.00   98.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00
+01:10:28 AM   11    1.96    0.00   97.06    0.00    0.00    0.00    0.00    0.00    0.00    0.98
+```
+
+if we have a look at what this huge usage is caused by, we can see that it is the vscode server doing a workspace search / indexing after being resumed. The hot processes are ripgrep (rg) and node instances started by VS Code server.
+```bash
+top -b -n1 -o %CPU | sed -n '1,20p'
+top - 00:44:35 up 12 min,  2 users,  load average: 21.89, 17.80, 9.85
+Tasks: 246 total,   3 running, 243 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  2.5 us, 97.5 sy,  0.0 ni,  0.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :  64115.8 total,  56519.5 free,   7357.1 used,    961.2 buff/cache     
+MiB Swap:  65536.0 total,  65536.0 free,      0.0 used.  56758.7 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+   2906 buntu     20   0  262592  29336   3200 S 516.7   0.0  61:43.90 rg
+   3121 buntu     20   0   92608  11160   3200 S 450.0   0.0  21:54.54 rg
+   2546 buntu     20   0   15.0g   3.1g  51968 R  58.3   4.9   7:17.32 node
+     17 root      20   0       0      0      0 I   8.3   0.0   0:00.37 rcu_pre+
+   2733 buntu     20   0   54.4g   2.6g  60232 R   8.3   4.2   1:18.09 node
+   3910 buntu     20   0   11904   5504   3456 R   8.3   0.0   0:00.01 top
+      1 root      20   0   22216  12792   9336 S   0.0   0.0   0:01.84 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:00.00 kthreadd
+      3 root      20   0       0      0      0 S   0.0   0.0   0:00.00 pool_wo+
+      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+
+      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+
+      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+
+      7 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+
+buntu@beefy:/$ ps -eo pid,ppid,cmd,%cpu,%mem --sort=-%cpu | head -n20
+    PID    PPID CMD                         %CPU %MEM
+   2906    2733 /home/buntu/.vscode-server/  805  0.0
+   3121    2733 /home/buntu/.vscode-server/  452  0.0
+   2546       1 /home/buntu/.vscode-server/ 85.6  4.9
+   2733    1754 /home/buntu/.vscode-server/ 16.5  4.2
+   2744    1754 /home/buntu/.vscode-server/  1.9  0.1
+   1754    1750 /home/buntu/.vscode-server/  0.3  0.1
+      1       0 /sbin/init                   0.2  0.0
+    110       2 [kworker/5:1-events_freezab  0.1  0.0
+     49       2 [kworker/5:0-i915-unordered  0.1  0.0
+   1807    1754 /home/buntu/.vscode-server/  0.1  0.1
+   2700    2682 /home/buntu/.vscode-server/  0.1  0.0
+```
+
+To make this not recur after waking up from hybernation, we can exclude our very large 8TB & 30TB mount. we can create the file /home/buntu/.vscode-server/data/Machine/settings.json and add this:
+```bash
+{
+  "files.watcherExclude": {
+    "/mnt/storage/**": true
+  },
+  "search.exclude": {
+    "/mnt/storage": true
+  },
+  "search.followSymlinks": false
+}
+```
+ and after we can either reboot or restart the vscode-server
+ ```bash
+ pkill -f "vscode-server" || true
+ ```
+ after the next wake up from hybernation the issue will be resolved
