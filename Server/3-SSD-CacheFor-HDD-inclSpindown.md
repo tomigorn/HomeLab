@@ -5,21 +5,59 @@ The Hardware is one 8TB SSD and one 30TB HDD.
 
 > This process will delete everything on both drives!
 
-## 1. Identify the devices
+## 1. Identify the devices (use stable identifiers)
+
+Device node names like `/dev/sda` and `/dev/sdb` can change across reboots. Always map transient names to stable identifiers before doing destructive operations.
+
+Get a human-friendly list of block devices:
 
 ```bash
-$ lsblk
-NAME                      MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS
-sda                         8:0    0  27.3T  0 disk 
-└─sda1                      8:1    0  27.3T  0 part 
-sdb                         8:16   0   7.3T  0 disk 
-└─sdb1                      8:17   0   7.3T  0 part 
-nvme0n1                   259:0    0 931.5G  0 disk 
-├─nvme0n1p1               259:1    0     1G  0 part /boot/efi
-├─nvme0n1p2               259:2    0     2G  0 part /boot
-└─nvme0n1p3               259:3    0 928.5G  0 part 
-  └─ubuntu--vg-ubuntu--lv 252:0    0   100G  0 lvm  /
+$ lsblk -o NAME,MAJ:MIN,RM,SIZE,RO,TYPE,MOUNTPOINT,LABEL
+NAME                      MAJ:MIN RM   SIZE RO TYPE MOUNTPOIN LABEL
+sda                         8:0    0   7.3T  0 disk           
+└─sda1                      8:1    0   7.3T  0 part           
+sdb                         8:16   0  27.3T  0 disk           
+└─sdb1                      8:17   0  27.3T  0 part           
+nvme0n1                   259:0    0 931.5G  0 disk           
+├─nvme0n1p1               259:1    0     1G  0 part /boot/efi 
+├─nvme0n1p2               259:2    0     2G  0 part /boot     
+└─nvme0n1p3               259:3    0 928.5G  0 part           
+  └─ubuntu--vg-ubuntu--lv 252:0    0   100G  0 lvm  /    
 ```
+
+List persistent by-id links (recommended for scripts):
+
+```bash
+$ ls -l /dev/disk/by-id
+```
+
+Get filesystem UUIDs (useful for fstab and consistent referencing):
+
+```bash
+$ sudo blkid
+```
+
+Example mapping workflow (record these before making changes):
+
+```bash
+# see transient device nodes
+$ lsblk
+
+# see persistent identifiers for the same device
+$ ls -l /dev/disk/by-id | grep -i 'Samsung'   # or grep the model you expect
+
+# find which by-id entry points at /dev/sda1 (example)
+$ readlink -f /dev/disk/by-id/ata-Samsung_SSD_870_XXXXXXXXX-part1
+/dev/sda1
+
+# get the PARTUUID/UUID for fstab stable mounts
+$ sudo blkid /dev/sda1
+/dev/sda1: UUID="XXXXXXXX-..." TYPE="bcache" PARTUUID="XXXXXXXX-..."
+```
+
+Record the `by-id` path or the UUID and use that in later commands instead of `/dev/sd*`.
+
+Examples in this document will show the persistent form: `/dev/disk/by-id/<...>` or `UUID=<...>`.
 
 ## 2. Install required tools
 
@@ -33,19 +71,42 @@ $ which wipefs
 
 Don't worry about this error message as wipefs is already part of Ubuntu and installed in the base system
 
-## 3. Wipe all data on both drives
+## 3. Wipe all data on both drives (use stable ids)
+
+Warning: This will destroy data on the referenced devices. Use the `by-id` path or UUID you recorded earlier.
+
+Using `/dev/disk/by-id`:
 
 ```bash
-$ sudo wipefs -a /dev/sda1
-/dev/sda1: 16 bytes were erased at offset 0x00001018 (bcache): c6 85 73 f6 4e 1a 45 ca 82 65 f5 7f 48 ba 6d 81
+# example: replace with the by-id path you recorded
+$ sudo wipefs -a /dev/disk/by-id/ata-Samsung_SSD_870_XXXXXXXXX-part1
+/dev/disk/by-id/ata-Samsung_SSD_870_CCCXXXXX-part1: 16 bytes were erased at offset 0x00001018 (bcache): ...
 
-$ sudo wipefs -a /dev/sdb1
+$ sudo wipefs -a /dev/disk/by-id/ata-WDC_WD30_...-part1
 ```
 
-## 4. Set the SSD as the cache drive for the HDD
+Or use the PARTUUID/UUID form (handy for fstab and systemd):
 
 ```bash
-$ sudo make-bcache -C /dev/sda1 -B /dev/sdb1
+# use the printed UUID from blkid; this identifies the filesystem/superblock, not the block device node
+$ sudo wipefs -a /dev/disk/by-uuid/XXXXXXXXX
+```
+
+If you prefer to clear entire partition tables (destructive):
+
+```bash
+$ sudo sgdisk --zap-all /dev/disk/by-id/ata-WDC_WD30_...   # operates on whole disk device
+```
+
+# Example: use persistent by-id devices for make-bcache
+
+## 4. Set the SSD as the cache drive for the HDD (persistent device paths)
+
+```bash
+# replace the by-id paths with the ones you recorded earlier
+$ sudo make-bcache -C /dev/disk/by-id/ata-Samsung_SSD_870_XXXXXXXXXX-part1 \
+  -B /dev/disk/by-id/ata-WDC_WD30_XXXXXXXX-part1
+
 UUID:                   REDACTED
 Set UUID:               REDACTED
 version:                0
@@ -80,11 +141,11 @@ $ cat /sys/block/bcache0/bcache/cache_mode
 ## 6. Tune sequential cutoff
 
 ```bash
-$ echo writearound | sudo tee /sys/block/bcache0/bcache/cache_mode
-writearound
+$ echo writeback | sudo tee /sys/block/bcache0/bcache/cache_mode
+writeback
 
 $ cat /sys/block/bcache0/bcache/cache_mode
-writethrough writeback [writearound] none
+writethrough [writeback] writearound none
 
 $ echo 0 | sudo tee /sys/block/bcache0/bcache/sequential_cutoff
 0
@@ -273,4 +334,88 @@ $ chmod +x ~/Projects/Source/track_hdd_spindown.sh
 $ ~/Projects/Source/track_hdd_spindown.sh
 $ cat ~/Documents/hdd_spindown.log
 
+## Troubleshooting: `hdparm -C` reports "drive state is: unknown"
+
+Sometimes `hdparm -C /dev/…` reports `drive state is: unknown`. This is often benign — it usually means the CHECK POWER MODE ATA command is not supported or is blocked by the controller/enclosure. Recommended checks and fallbacks:
+
+1) Confirm you're addressing the whole-disk device (use by-id):
+
+```bash
+readlink -f /dev/disk/by-id/ata-...  # should point to /dev/sdX
 ```
+
+2) Prefer `smartctl -n standby -i` for read-only, non-spinning checks (used by our tracking script):
+
+```bash
+sudo smartctl -n standby -i /dev/disk/by-id/ata-... 
+# look for 'Device is in' or 'Power mode was:' in the output
+```
+
+3) Use `sdparm` for SCSI devices/enclosures if available:
+
+```bash
+sudo sdparm --get=STANDBY /dev/disk/by-id/...
+```
+
+4) If the disk is behind a RAID/HBA or an enclosure that doesn't passthrough ATA commands, configure spindown in the controller/firmware or use vendor tools.
+
+5) If you must spin down immediately and it's safe (no mounted filesystems / no I/O), `sudo hdparm -y /dev/disk/by-id/ata-...` forces the disk to standby. Use with caution.
+
+The `track_hdd_spindown.sh` script prefers `smartctl` and falls back to `hdparm` so it works across a wide range of hardware.
+
+````markdown
+
+## Fixing permissions for /mnt/storage (non-root write access)
+
+If `/mnt/storage` is owned by `root:root` (the common default), unprivileged users won't be able to create files there. You have three low-risk options depending on how you want to manage access:
+
+1) Change ownership to a specific user (simple, single-user systems)
+
+```bash
+# make the directory owned by the desired user
+sudo chown alice:alice /mnt/storage
+
+# verify
+ls -ld /mnt/storage
+# drwxr-xr-x 2 alice alice 4096 Sep 15 02:13 /mnt/storage
+```
+
+2) Use a dedicated group and setgid so new files inherit the group (recommended for multi-user systems)
+
+```bash
+# create a group, add users to it, set group ownership and setgid bit
+sudo groupadd storageusers || true
+sudo usermod -aG storageusers alice
+sudo chown root:storageusers /mnt/storage
+sudo chmod 2775 /mnt/storage   # setgid bit (2) + rwxrwxr-x (775)
+
+# verify
+ls -ld /mnt/storage
+# drwxrwsr-x 2 root storageusers 4096 Sep 15 02:13 /mnt/storage
+```
+
+3) Use POSIX ACLs for fine-grained control (if you need per-user permissions)
+
+```bash
+# give user 'alice' full access while keeping root as owner
+sudo setfacl -m u:alice:rwx /mnt/storage
+
+# show ACLs
+getfacl /mnt/storage
+# file: mnt/storage
+# owner: root
+# group: root
+# user::rwx
+# user:alice:rwx
+# group::r-x
+# mask::rwx
+# other::r-x
+```
+
+Notes and safety:
+- If the filesystem is mounted by UUID in `/etc/fstab`, you can make these changes once and they will persist across reboots.
+- Avoid making the mount world-writable (`chmod 777`) unless you understand the security implications.
+- If multiple services write to `/mnt/storage` as different POSIX users (e.g., system services), prefer the group+setgid or ACL approaches and add service users to the group.
+
+After applying one of the above, non-root users should be able to create files under `/mnt/storage`. If you still see permission errors, re-check the effective user/group of the process trying to write (for system services check the unit's `User=`/`Group=` in its systemd service file).
+````
